@@ -17,7 +17,7 @@
 #define PORT 8010
 #define MAX_CLIENTS 5
 #define MAX_DATA_CHANNELS_PER_CLIENT 5
-#define BUFF_SIZE 256
+#define BUFF_SIZE 2048
 
 using namespace std;
 

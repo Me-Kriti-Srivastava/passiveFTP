@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 
 #define PORT 8010
-#define BUFF_SIZE 256
+#define BUFF_SIZE 2048
 #define MAX_CLIENTS 5
 
 using namespace std;
