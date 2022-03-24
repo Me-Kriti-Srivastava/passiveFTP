@@ -148,6 +148,7 @@ void commandMapping(char *command, int idx)
     string cmd = string(command);
     if (cmd[cmd.size() - 1] != '$')
         return;
+    cmd.pop_back();
     string res;
     char *op = NULL, *filename = NULL, *flag = NULL;
     char statusBuffer[BUFF_SIZE];
@@ -323,8 +324,10 @@ void *connector(void *args)
         while (1)
         {
             read(senderFd, commandBuffer, BUFF_SIZE);
+            char tempBuffer[BUFF_SIZE];
+            bcopy(commandBuffer, tempBuffer, BUFF_SIZE);
             char *cmd = NULL, *delimiter = NULL;
-            cmd = strtok(commandBuffer, " ");
+            cmd = strtok(tempBuffer, " ");
             if (cmd != NULL)
                 delimiter = strtok(NULL, " ");
             if (delimiter != NULL && strcmp(delimiter, "$") == 0 && strcmp(cmd, "close") == 0)
