@@ -31,8 +31,26 @@ struct Client
 struct FuncParam
 {
     int idx;
-    char *filename;
+    string filename;
 };
+
+// struct Response
+// {
+//     string status;
+//     string op;
+//     string file_addr;
+// };
+
+int getStringSizeC(char *s)
+{
+    int size = 0;
+    for (int i = 0; s[i] != '\n'; i++)
+    {
+        size++;
+    }
+
+    return size + 1;
+}
 
 class User
 {
@@ -123,26 +141,65 @@ string charArrToString(char *a, int size)
 // }
 
 int init(int);
+void *recvFile(void *);
+void *sendFile(void *);
+void executeGET(char *);
+void executePUT(FuncParam);
 
-void executeGET(char *file_addr, int idx)
+void executeGET(char *param)
 {
-    int slot = idx;
-    pthread_create(&thread_id, NULL, sendFile, (void *)&slot);
+    // FuncParam *params = (FuncParam *)malloc(sizeof(FuncParam));
+    // *params = param;
+    cout << "FFFFFFFFFFFFFFFFF" << endl;
+    pthread_create(&thread_id, NULL, sendFile, (void *)param);
 }
 
-void executePUT(char *file_addr, int idx)
+void executePUT(FuncParam param)
 {
-    int slot = idx;
-    pthread_create(&thread_id, NULL, recvFile, (void *)&slot);
+    cout << "in execput" << endl;
+    FuncParam params = param;
+    pthread_create(&thread_id, NULL, recvFile, (void *)&params);
 }
 
 void commandMapping(char *command, int idx)
 {
-    char *param1 = strtok(command, " "), *param2 = strtok(NULL, " ");
+    // cout << "Command: " << command;
+    string res;
+    char *param1 = strtok(command, " "), *param2 = strtok(NULL, " "), statusBuffer[BUFF_SIZE];
+    int fd = clients[idx].fd;
+
+    bzero(statusBuffer, BUFF_SIZE);
+    string param = "";
+    param += to_string(idx);
+    param += " ";
+    param += string(param2);
+    res += "CREATE_DATA_CONN";
     if (strcmp(param1, "GET") == 0 && param2 != NULL)
-        executeGET(param2, idx);
+        res += " GET ";
     else if (strcmp(param1, "PUT") == 0 && param2 != NULL)
-        executePUT(param2, idx);
+        res += " PUT ";
+
+    res += charArrToString(param2, getStringSizeC(param2));
+    // cout << res.file_addr << endl;
+    // cout << "Param2: " << param2 << endl;
+    bcopy("CREATE_DATA_CONN", statusBuffer, BUFF_SIZE);
+    write(fd, statusBuffer, BUFF_SIZE);
+    write(fd, res.c_str(), BUFF_SIZE);
+    bzero(statusBuffer, BUFF_SIZE);
+    int x = read(fd, statusBuffer, BUFF_SIZE);
+    if (x < 0)
+    {
+        cout << "erroor in reading" << endl;
+    }
+    cout << "Status: " << statusBuffer << endl;
+
+    if (strcmp(statusBuffer, "DATA_CONN_TRUE") == 0)
+    {
+        if (strcmp(param1, "GET") == 0 && param2 != NULL)
+            executeGET((char *)param.c_str());
+        // else if (strcmp(param1, "PUT") == 0 && param2 != NULL)
+        //     executePUT(param.c_str());
+    }
 }
 
 int getFileSize(ifstream *myFile)
@@ -162,11 +219,15 @@ int getFileSizeC(FILE *fptr)
 
 void *recvFile(void *args)
 {
-    int idx = *((int *)args), numBytes = 0, totalBytesRecieved = 0, cnt = 0;
+    // FuncParam params = *((FuncParam *)args);
+    char *param1 = strtok((char *)args, " "), *param2 = strtok(NULL, " ");
+    int idx = atoi(param1), numBytes = 0, totalBytesRecieved = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
-
+    // cout << params.filename << endl;
+    string user_dir = clients[idx].username + "/" + string(param2);
     FILE *fptr;
-    fptr = fopen("test2.txt", "r");
+    cout << user_dir << endl;
+    fptr = fopen(user_dir.c_str(), "w");
     int fileSize = getFileSizeC(fptr);
 
     // ifstream myFile("test.txt");
@@ -198,39 +259,51 @@ void *recvFile(void *args)
 
 void *sendFile(void *args)
 {
-    int idx = *((int *)args), numBytes = 0, totalBytesSent = 0;
+    char *xyz = (char *)args;
+    cout << xyz << endl;
+    cout << "dgfdgvsgsdg" << endl;
+    char *param1 = strtok((char *)args, " ");
+    char *param2 = strtok(NULL, " ");
+    int idx = atoi(param1), numBytes = 0, totalBytesSent = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
 
+    cout << param2 << endl;
+
     FILE *fptr;
-    fptr = fopen("test2.txt", "r");
+    // cout << "Filename: " << params.filename << endl;
+    // string user_dir = clients[idx].username + "/" + string(param2);
+    fptr = fopen(param2, "r");
+
     int fileSize = getFileSizeC(fptr);
 
     // ifstream myFile("test.txt");
     // int fileSize = getFileSize(&myFile);
     write(clientFd, &fileSize, sizeof(int));
     char fileBuffer[BUFF_SIZE];
-    bzero(fileBuffer, BUFF_SIZE);
-    int cnt = 0;
     cout << "sd fsd fsd fsdf " << fileSize << endl;
     while (totalBytesSent < fileSize)
     {
-        numBytes = fread(fileBuffer, BUFF_SIZE, sizeof(char), fptr);
+        bzero(fileBuffer, BUFF_SIZE);
+        numBytes = fread(fileBuffer, sizeof(char), BUFF_SIZE, fptr);
         if (numBytes == 0) // EOF detected
             break;
         // cout << fileBuffer << endl;
         // myFile.read(fileBuffer, BUFF_SIZE);
         // numBytes = myFile.gcount();
+        // cout << numBytes << endl;
         write(clientFd, fileBuffer, numBytes);
         totalBytesSent += numBytes;
         cnt++;
     }
+    cout << "fikle sent" << endl;
     fclose(fptr);
-    cout << cnt << "dfgvdfgksdncrfsklcjaleklcJELAKNFALKSCDNASKLDA" << endl;
+    // cout << cnt << "dfgvdfgksdncrfsklcjaleklcJELAKNFALKSCDNASKLDA" << endl;
 
     // string file = "sdfsdfsfsdfsdf";
     // bcopy(file.c_str(), fileBuffer, file.size());
-    write(clients[idx].latestDataConnection, "asrcwrwrwrwr", BUFF_SIZE);
+    // write(clients[idx].latestDataConnection, "asrcwrwrwrwr", BUFF_SIZE);
     close(clientFd);
+    cout << "exiting from senf file" << endl;
 }
 
 void *listenDataConn(void *args)
@@ -282,14 +355,12 @@ void *connector(void *args)
         // TODO
         // Establish data connection
         read(senderFd, commandBuffer, BUFF_SIZE);
-        char *param1 = strtok(commandBuffer, " "), *param2 = strtok(NULL, " ");
-        bcopy("CREATE_DATA_CONN", statusBuffer, BUFF_SIZE);
-        write(senderFd, statusBuffer, BUFF_SIZE);
-        bzero(statusBuffer, BUFF_SIZE);
-        read(senderFd, statusBuffer, BUFF_SIZE);
+        commandMapping(commandBuffer, slot);
+        // char *param1 = strtok(commandBuffer, " "), *param2 = strtok(NULL, " ");
+
         printf("%s\n", statusBuffer);
 
-        pthread_create(&thread_id, NULL, sendFile, (void *)&slot);
+        // pthread_create(&thread_id, NULL, sendFile, (void *)&slot);
     }
 }
 
