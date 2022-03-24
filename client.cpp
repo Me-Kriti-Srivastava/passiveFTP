@@ -28,17 +28,11 @@ pthread_t sender, reciever, tid;
 //     return;
 // }
 
-struct Response
-{
-    string status;
-    string op;
-    string file_addr;
-};
-
 struct FuncParam
 {
     int fd;
     string file_addr;
+    bool isBinary;
 };
 
 int getStringSizeC(char *s)
@@ -74,19 +68,15 @@ int getFileSizeC(FILE *fptr)
 
 void *recvFile(void *args)
 {
-    cout << "dgfdgvsgsdg" << endl;
-    // FuncParam *param = new FuncParam;
-    // param->fd = ((FuncParam *)args)->fd;
-    // param->file_addr = ((FuncParam *)args)->file_addr;
-    char *param1 = strtok((char *)args, " "), *param2 = strtok(NULL, " ");
-    // cout << param->fd << endl;
-    int sockfd = atoi(param1), fileSize, totalBytesRecieved = 0, numBytes = 0, cnt = 0;
+    int sockfd = ((FuncParam *)args)->fd, fileSize, totalBytesRecieved = 0, numBytes = 0, cnt = 0;
     char buffer[BUFF_SIZE];
-    if (param2 == NULL)
-        cout << "NULLLLLL" << endl;
-    string client_dir = "CLIENT/" + string(param2);
+    bool isBinary = ((FuncParam *)args)->isBinary;
+    string client_dir = "CLIENT/" + ((FuncParam *)args)->file_addr;
     FILE *fptr;
-    fptr = fopen(client_dir.c_str(), "w");
+    if (isBinary)
+        fptr = fopen(client_dir.c_str(), "wb");
+    else
+        fptr = fopen(client_dir.c_str(), "w");
     read(sockfd, &fileSize, sizeof(int));
     cout << "FileSize: " << fileSize << endl;
     while (totalBytesRecieved < fileSize)
@@ -101,15 +91,19 @@ void *recvFile(void *args)
     }
 
     fclose(fptr);
+    return nullptr;
 }
 
 void *sendFile(void *args)
 {
-    FuncParam param = *((FuncParam *)args);
-    int sockfd = param.fd, fileSize, totalBytesSent = 0, numBytes = 0, cnt = 0;
+    int sockfd = ((FuncParam *)args)->fd, fileSize, totalBytesSent = 0, numBytes = 0, cnt = 0;
     char buffer[BUFF_SIZE];
+    bool isBinary = ((FuncParam *)args)->isBinary;
     FILE *fptr;
-    fptr = fopen(param.file_addr.c_str(), "r");
+    if (isBinary)
+        fptr = fopen(("CLIENT/" + ((FuncParam *)args)->file_addr).c_str(), "rb");
+    else
+        fptr = fopen(("CLIENT/" + ((FuncParam *)args)->file_addr).c_str(), "r");
     fileSize = getFileSizeC(fptr);
 
     write(sockfd, &fileSize, sizeof(int));
@@ -125,6 +119,7 @@ void *sendFile(void *args)
     }
 
     fclose(fptr);
+    return nullptr;
 }
 
 void *sender_func(void *args)
@@ -162,14 +157,13 @@ void *reciever_func(void *args)
     {
         bzero(buffer, BUFF_SIZE);
         read(fd, buffer, BUFF_SIZE);
-        string param;
-        // = (FuncParam *)malloc(sizeof(FuncParam));
         printf("MESSAGE: %s\n", buffer);
         if (strcmp(buffer, "CREATE_DATA_CONN") == 0)
         {
-            // cout << "debug102\n";
             char res[BUFF_SIZE];
             read(fd, res, BUFF_SIZE);
+            FuncParam *params = new FuncParam();
+
             int sockfd;
             struct sockaddr_in serverAdd;
             sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -187,45 +181,34 @@ void *reciever_func(void *args)
             serverAdd.sin_port = htons(PORT + 1);
             serverAdd.sin_addr.s_addr = INADDR_ANY;
 
-            // signal(SIGINT, handleSig);
-            // cout << "DEBUG_63" << endl;
             pthread_t thread_id;
 
             if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
             {
 
-                // sleep(10);
                 write(fd, "DATA_CONN_TRUE", BUFF_SIZE);
-                // string res->file_addr = "test.txt";
-                // cout << res->file_addr << endl;
-                char *param1 = strtok(res, " "), *param2 = strtok(NULL, " "), *param3 = strtok(NULL, " ");
-                param += to_string(sockfd);
-                param += " ";
-                param += string(param3);
-
-                // param.fd = sockfd;
-                // param.file_addr = res.file_addr;
-                // cout << (*param).file_addr << endl;
-                char buff[BUFF_SIZE];
-                bcopy(param.c_str(), buff, param.size());
-                if (strcmp(param2, "GET") == 0)
-                    pthread_create(&thread_id, NULL, recvFile, (void *)&buff);
+                char *status = NULL, *op = NULL, *file_addr = NULL, *flag = NULL;
+                status = strtok(res, " ");
+                if (status != NULL)
+                    op = strtok(NULL, " ");
+                if (op != NULL)
+                    file_addr = strtok(NULL, " ");
+                if (file_addr != NULL)
+                    flag = strtok(NULL, " ");
+                params->fd = sockfd;
+                params->file_addr = string(file_addr);
+                if (flag != NULL)
+                    params->isBinary = 1;
+                if (strcmp(op, "GET") == 0)
+                    pthread_create(&thread_id, NULL, recvFile, (void *)params);
                 else
-                    pthread_create(&thread_id, NULL, sendFile, (void *)&buff);
-                // string status = "DATA_CONN_TRUE";
-                // char statusBuffer[BUFF_SIZE];
-                // bzero(statusBuffer, BUFF_SIZE);
-                // bcopy(status.c_str(), statusBuffer, status.size());
-
-                // printf("[ / ] LOLOLOL!\n");
+                    pthread_create(&thread_id, NULL, sendFile, (void *)params);
             }
             else
             {
                 perror("[ X ]Connection with the server failed...\n");
                 exit(1);
             }
-            // fflush(stdout);
-            //}
         }
     }
 }

@@ -32,14 +32,8 @@ struct FuncParam
 {
     int idx;
     string filename;
+    bool isBinary;
 };
-
-// struct Response
-// {
-//     string status;
-//     string op;
-//     string file_addr;
-// };
 
 int getStringSizeC(char *s)
 {
@@ -143,62 +137,47 @@ string charArrToString(char *a, int size)
 int init(int);
 void *recvFile(void *);
 void *sendFile(void *);
-void executeGET(char *);
-void executePUT(FuncParam);
-
-void executeGET(char *param)
-{
-    // FuncParam *params = (FuncParam *)malloc(sizeof(FuncParam));
-    // *params = param;
-    cout << "FFFFFFFFFFFFFFFFF" << endl;
-    pthread_create(&thread_id, NULL, sendFile, (void *)param);
-}
-
-void executePUT(FuncParam param)
-{
-    cout << "in execput" << endl;
-    FuncParam params = param;
-    pthread_create(&thread_id, NULL, recvFile, (void *)&params);
-}
 
 void commandMapping(char *command, int idx)
 {
     // cout << "Command: " << command;
     string res;
-    char *param1 = strtok(command, " "), *param2 = strtok(NULL, " "), statusBuffer[BUFF_SIZE];
+    char *op = NULL, *filename = NULL, *flag = NULL;
+    char statusBuffer[BUFF_SIZE];
+    op = strtok(command, " ");
+    if (op != NULL)
+        filename = strtok(NULL, " ");
+    if (filename != NULL)
+        flag = strtok(NULL, " ");
     int fd = clients[idx].fd;
+    FuncParam *params = new FuncParam();
+    params->idx = idx;
+    params->filename = string(filename);
 
     bzero(statusBuffer, BUFF_SIZE);
-    string param = "";
-    param += to_string(idx);
-    param += " ";
-    param += string(param2);
-    res += "CREATE_DATA_CONN";
-    if (strcmp(param1, "GET") == 0 && param2 != NULL)
-        res += " GET ";
-    else if (strcmp(param1, "PUT") == 0 && param2 != NULL)
-        res += " PUT ";
 
-    res += charArrToString(param2, getStringSizeC(param2));
-    // cout << res.file_addr << endl;
-    // cout << "Param2: " << param2 << endl;
+    res += "CREATE_DATA_CONN";
+    if (strcmp(op, "GET") == 0 && filename != NULL)
+        res += " GET ";
+    else if (strcmp(op, "PUT") == 0 && filename != NULL)
+        res += " PUT ";
+    res += charArrToString(filename, getStringSizeC(filename));
+    if (flag != NULL && strcmp(flag, "-b") == 0)
+        res += " -b";
+
     bcopy("CREATE_DATA_CONN", statusBuffer, BUFF_SIZE);
     write(fd, statusBuffer, BUFF_SIZE);
     write(fd, res.c_str(), BUFF_SIZE);
     bzero(statusBuffer, BUFF_SIZE);
     int x = read(fd, statusBuffer, BUFF_SIZE);
-    if (x < 0)
-    {
-        cout << "erroor in reading" << endl;
-    }
     cout << "Status: " << statusBuffer << endl;
 
     if (strcmp(statusBuffer, "DATA_CONN_TRUE") == 0)
     {
-        if (strcmp(param1, "GET") == 0 && param2 != NULL)
-            executeGET((char *)param.c_str());
-        // else if (strcmp(param1, "PUT") == 0 && param2 != NULL)
-        //     executePUT(param.c_str());
+        if (strcmp(op, "GET") == 0 && op != NULL)
+            pthread_create(&thread_id, NULL, sendFile, (void *)params);
+        else if (strcmp(op, "PUT") == 0 && op != NULL)
+            pthread_create(&thread_id, NULL, recvFile, (void *)params);
     }
 }
 
@@ -219,30 +198,30 @@ int getFileSizeC(FILE *fptr)
 
 void *recvFile(void *args)
 {
-    // FuncParam params = *((FuncParam *)args);
-    char *param1 = strtok((char *)args, " "), *param2 = strtok(NULL, " ");
-    int idx = atoi(param1), numBytes = 0, totalBytesRecieved = 0, cnt = 0;
+    FuncParam *param = (FuncParam *)args;
+    int idx = param->idx, fileSize, numBytes = 0, totalBytesRecieved = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
-    // cout << params.filename << endl;
-    string user_dir = clients[idx].username + "/" + string(param2);
+    bool isBinary = param->isBinary;
+    string user_dir = clients[idx].username + "/" + param->filename;
     FILE *fptr;
-    cout << user_dir << endl;
-    fptr = fopen(user_dir.c_str(), "w");
-    int fileSize = getFileSizeC(fptr);
-
+    // cout << user_dir << endl;
+    if (isBinary)
+        fptr = fopen(user_dir.c_str(), "wb");
+    else
+        fptr = fopen(user_dir.c_str(), "w");
     // ifstream myFile("test.txt");
     // int fileSize = getFileSize(&myFile);
     char fileBuffer[BUFF_SIZE];
     bzero(fileBuffer, BUFF_SIZE);
-    write(clientFd, &fileSize, sizeof(int));
-    cout << "sd fsd fsd fsdf " << fileSize << endl;
+    read(clientFd, &fileSize, sizeof(int));
+    cout << "FileSize " << fileSize << endl;
     while (totalBytesRecieved < fileSize)
     {
         numBytes = read(clientFd, fileBuffer, BUFF_SIZE);
         if (numBytes == 0) // EOF detected
             break;
         fwrite(fileBuffer, sizeof(char), numBytes, fptr);
-        printf("%s\n", fileBuffer);
+        // printf("%s\n", fileBuffer);
         //  min(BUFF_SIZE, fileSize - totalBytesRecieved));
         // myFile.write(buffer, BUFF_SIZE);
         // numBytes = BUFF_SIZE;
@@ -251,28 +230,22 @@ void *recvFile(void *args)
         cnt++;
     }
     fclose(fptr);
-    // string file = "sdfsdfsfsdfsdf";
-    // bcopy(file.c_str(), fileBuffer, file.size());
-    write(clients[idx].latestDataConnection, "asrcwrwrwrwr", BUFF_SIZE);
     close(clientFd);
+    return nullptr;
 }
 
 void *sendFile(void *args)
 {
-    char *xyz = (char *)args;
-    cout << xyz << endl;
-    cout << "dgfdgvsgsdg" << endl;
-    char *param1 = strtok((char *)args, " ");
-    char *param2 = strtok(NULL, " ");
-    int idx = atoi(param1), numBytes = 0, totalBytesSent = 0, cnt = 0;
+    int idx = ((FuncParam *)args)->idx, numBytes = 0, totalBytesSent = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
-
-    cout << param2 << endl;
-
+    bool isBinary = ((FuncParam *)args)->isBinary;
+    cout << ((FuncParam *)args)->filename << endl;
     FILE *fptr;
-    // cout << "Filename: " << params.filename << endl;
-    // string user_dir = clients[idx].username + "/" + string(param2);
-    fptr = fopen(param2, "r");
+
+    if (isBinary)
+        fptr = fopen(("SERVER/" + ((FuncParam *)args)->filename).c_str(), "rb");
+    else
+        fptr = fopen(("SERVER/" + ((FuncParam *)args)->filename).c_str(), "r");
 
     int fileSize = getFileSizeC(fptr);
 
@@ -280,7 +253,7 @@ void *sendFile(void *args)
     // int fileSize = getFileSize(&myFile);
     write(clientFd, &fileSize, sizeof(int));
     char fileBuffer[BUFF_SIZE];
-    cout << "sd fsd fsd fsdf " << fileSize << endl;
+    cout << "FileSize: " << fileSize << endl;
     while (totalBytesSent < fileSize)
     {
         bzero(fileBuffer, BUFF_SIZE);
@@ -295,15 +268,9 @@ void *sendFile(void *args)
         totalBytesSent += numBytes;
         cnt++;
     }
-    cout << "fikle sent" << endl;
     fclose(fptr);
-    // cout << cnt << "dfgvdfgksdncrfsklcjaleklcJELAKNFALKSCDNASKLDA" << endl;
-
-    // string file = "sdfsdfsfsdfsdf";
-    // bcopy(file.c_str(), fileBuffer, file.size());
-    // write(clients[idx].latestDataConnection, "asrcwrwrwrwr", BUFF_SIZE);
     close(clientFd);
-    cout << "exiting from senf file" << endl;
+    return nullptr;
 }
 
 void *listenDataConn(void *args)
@@ -351,7 +318,7 @@ void *connector(void *args)
             charArrToString(usernameBuffer, BUFF_SIZE),
             charArrToString(passwordBuffer, BUFF_SIZE));
         user.authenticate();
-
+        clients[slot].username = string(usernameBuffer);
         // TODO
         // Establish data connection
         read(senderFd, commandBuffer, BUFF_SIZE);
