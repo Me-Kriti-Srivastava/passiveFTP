@@ -14,13 +14,14 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#define PORT 8010
+// #define PORT 8010
 #define BUFF_SIZE 2048
 #define MAX_CLIENTS 5
 
 using namespace std;
 
 pthread_t sender, reciever, tid;
+int PORT;
 
 void handleSig(int sig_num)
 {
@@ -111,6 +112,7 @@ void *recvFile(void *args)
          << "Filename: " << ((FuncParam *)args)->file_addr << "\n"
          << "FileSize: " << fileSize << " bytes\n"
          << "Request: GET\n"
+         << "Mode: " << (isBinary ? "Binary\n" : "ASCII\n")
          << "Number of chunks: " << cnt << "\n"
          << "Size per chunk: " << BUFF_SIZE << " bytes\n";
 
@@ -147,6 +149,7 @@ void *sendFile(void *args)
          << "Filename: " << ((FuncParam *)args)->file_addr << "\n"
          << "FileSize: " << fileSize << " bytes\n"
          << "Request: PUT\n"
+         << "Mode: " << (isBinary ? "Binary\n" : "ASCII\n")
          << "Number of chunks: " << cnt << "\n"
          << "Size per chunk: " << BUFF_SIZE << " bytes\n";
     fclose(fptr);
@@ -290,8 +293,14 @@ void *reciever_func(void *args)
     }
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    if (argc < 3)
+    {
+        cout << "Usage: ./client <ip> <port>" << endl;
+        exit(1);
+    }
+    PORT = atoi(argv[2]);
     int sockfd;
     struct sockaddr_in serverAdd;
     signal(SIGINT, handleSig);
@@ -310,7 +319,7 @@ int main()
     memset(&serverAdd, '\0', sizeof(serverAdd));
     serverAdd.sin_family = AF_INET;
     serverAdd.sin_port = htons(PORT);
-    serverAdd.sin_addr.s_addr = INADDR_ANY;
+    serverAdd.sin_addr.s_addr = inet_addr(argv[1]);
 
     if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
     {

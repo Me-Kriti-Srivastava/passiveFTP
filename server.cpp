@@ -14,12 +14,14 @@
 #include <vector>
 #include <dirent.h>
 
-#define PORT 8010
+// #define PORT 8010
 #define MAX_CLIENTS 5
 #define MAX_DATA_CHANNELS_PER_CLIENT 5
 #define BUFF_SIZE 2048
 
 using namespace std;
+
+int PORT;
 
 struct Client
 {
@@ -278,6 +280,7 @@ void *sendFile(void *args)
 
 void *listenDataConn(void *args)
 {
+    // int PORT = *((int *)args);
     int dataConnListenerFd = init(PORT + 1);
     struct sockaddr_in client_addr;
     socklen_t cliSize;
@@ -399,9 +402,15 @@ int init(int PORT_NUM)
     return sockfd;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
+    if (argc < 2)
+    {
+        cout << "Usage: ./server <PORT_NO>" << endl;
+        exit(1);
+    }
 
+    PORT = atoi(argv[1]);
     int sockfd = init(PORT), freeSlot = 0;
     struct sockaddr_in client_addr;
     socklen_t cliSize;
