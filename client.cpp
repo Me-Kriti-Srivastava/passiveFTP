@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #define PORT 8010
 #define BUFF_SIZE 256
@@ -21,12 +22,12 @@ using namespace std;
 
 pthread_t sender, reciever, tid;
 
-// void handleSig(int sig_num)
-// {
-//     signal(SIGINT, handleSig);
-//     fflush(stdout);
-//     return;
-// }
+void handleSig(int sig_num)
+{
+    signal(SIGINT, handleSig);
+    fflush(stdout);
+    return;
+}
 
 struct FuncParam
 {
@@ -34,6 +35,22 @@ struct FuncParam
     string file_addr;
     bool isBinary;
 };
+
+bool fileExists(char *filename)
+{
+    DIR *mydir;
+    bool exists = false;
+    struct dirent *mydirent;
+    mydir = opendir("./CLIENT");
+    while ((mydirent = readdir(mydir)) != NULL)
+        if (strcmp(mydirent->d_name, filename) == 0)
+        {
+            exists = true;
+            break;
+        }
+    closedir(mydir);
+    return exists;
+}
 
 int getStringSizeC(char *s)
 {
@@ -90,7 +107,15 @@ void *recvFile(void *args)
         cnt++;
     }
 
+    cout << "ProcessComplete!\n"
+         << "Filename: " << ((FuncParam *)args)->file_addr << "\n"
+         << "FileSize: " << fileSize << " bytes\n"
+         << "Request: GET\n"
+         << "Number of chunks: " << cnt << "\n"
+         << "Size per chunk: " << BUFF_SIZE << " bytes\n";
+
     fclose(fptr);
+    close(sockfd);
     return nullptr;
 }
 
@@ -118,7 +143,14 @@ void *sendFile(void *args)
         cnt++;
     }
 
+    cout << "ProcessComplete!\n"
+         << "Filename: " << ((FuncParam *)args)->file_addr << "\n"
+         << "FileSize: " << fileSize << " bytes\n"
+         << "Request: PUT\n"
+         << "Number of chunks: " << cnt << "\n"
+         << "Size per chunk: " << BUFF_SIZE << " bytes\n";
     fclose(fptr);
+    close(sockfd);
     return nullptr;
 }
 
@@ -126,38 +158,73 @@ void *sender_func(void *args)
 {
 
     int sockfd = *((int *)args);
+    char buffer[BUFF_SIZE];
+
+    // Enter username
+    bzero(buffer, BUFF_SIZE);
+    cout << "Enter your username:\n";
+    fgets(buffer, BUFF_SIZE, stdin);
+
+    // TODO: Put this in a function
+    int size = 0;
+    for (int i = 0; buffer[i] != '\n'; i++)
+    {
+        size++;
+    }
+    char ptr[size + 1];
+    strncpy(ptr, buffer, size);
+    ptr[size] = '\0';
+    write(sockfd, ptr, BUFF_SIZE);
+
+    // Enter password
+    bzero(buffer, BUFF_SIZE);
+    cout << "Enter your password:\n";
+    fgets(buffer, BUFF_SIZE, stdin);
+
+    // TODO: Put this in a function
+    size = 0;
+    for (int i = 0; buffer[i] != '\n'; i++)
+    {
+        size++;
+    }
+    char ptr2[size + 1];
+    strncpy(ptr2, buffer, size);
+    ptr2[size] = '\0';
+    write(sockfd, ptr2, BUFF_SIZE);
+
     while (1)
     {
-        // signal(SIGINT, handleSig);
-        char buffer[BUFF_SIZE];
+        signal(SIGINT, handleSig);
         bzero(buffer, BUFF_SIZE);
+        cout << "Enter Command (Terminate command with $):\n";
         fgets(buffer, BUFF_SIZE, stdin);
         int size = 0;
         for (int i = 0; buffer[i] != '\n'; i++)
         {
             size++;
         }
-        char ptr[size + 1];
-        strncpy(ptr, buffer, size);
-        ptr[size] = '\0';
-        if (strcmp(ptr, "DATA_CONN_TRUE") == 0)
+        char ptrx[size + 1];
+        strncpy(ptrx, buffer, size);
+        ptrx[size] = '\0';
+        if (strcmp(ptrx, "DATA_CONN_TRUE") == 0)
             continue;
-        write(sockfd, ptr, BUFF_SIZE);
+        write(sockfd, ptrx, BUFF_SIZE);
+        if (strcmp(ptrx, "close $") == 0)
+            break;
     }
+    pthread_exit(NULL);
 }
 
 void *reciever_func(void *args)
 {
     int fd = *((int *)args);
-    // while (1)
-    // {
-    // signal(SIGINT, handleSig);
     char buffer[BUFF_SIZE];
     while (1)
     {
+        signal(SIGINT, handleSig);
         bzero(buffer, BUFF_SIZE);
         read(fd, buffer, BUFF_SIZE);
-        printf("MESSAGE: %s\n", buffer);
+        // printf("MESSAGE: %s\n", buffer);
         if (strcmp(buffer, "CREATE_DATA_CONN") == 0)
         {
             char res[BUFF_SIZE];
@@ -186,7 +253,6 @@ void *reciever_func(void *args)
             if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
             {
 
-                write(fd, "DATA_CONN_TRUE", BUFF_SIZE);
                 char *status = NULL, *op = NULL, *file_addr = NULL, *flag = NULL;
                 status = strtok(res, " ");
                 if (status != NULL)
@@ -199,6 +265,17 @@ void *reciever_func(void *args)
                 params->file_addr = string(file_addr);
                 if (flag != NULL)
                     params->isBinary = 1;
+                else
+                    params->isBinary = 0;
+                if (strcmp(status, "FILE_NOT_FOUND") == 0 || (strcmp(op, "PUT") == 0 && fileExists(file_addr) == false))
+                {
+                    write(fd, "ERR", BUFF_SIZE);
+                    close(sockfd);
+                    cout << "[ / ] Data channel closed!" << endl;
+                    continue;
+                }
+                else
+                    write(fd, "DATA_CONN_TRUE", BUFF_SIZE);
                 if (strcmp(op, "GET") == 0)
                     pthread_create(&thread_id, NULL, recvFile, (void *)params);
                 else
@@ -217,6 +294,9 @@ int main()
 {
     int sockfd;
     struct sockaddr_in serverAdd;
+    signal(SIGINT, handleSig);
+    mkdir("CLIENT", 0777);
+
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sockfd <= 0)
@@ -232,18 +312,10 @@ int main()
     serverAdd.sin_port = htons(PORT);
     serverAdd.sin_addr.s_addr = INADDR_ANY;
 
-    // signal(SIGINT, handleSig);
-    // cout << "DEBUG_63" << endl;
-
     if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
     {
-
-        // cout << "DEBUG_68" << endl;
-        // sleep(10);
-
         pthread_create(&sender, NULL, sender_func, (void *)&sockfd);
         pthread_create(&reciever, NULL, reciever_func, (void *)&sockfd);
-
         // pthread_join(reciever, NULL);
         pthread_join(sender, NULL);
     }
