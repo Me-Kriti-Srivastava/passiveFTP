@@ -22,6 +22,8 @@
 using namespace std;
 
 int PORT;
+pthread_mutex_t authLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mapLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct Client
 {
@@ -32,7 +34,7 @@ struct Client
     string ip;
 };
 
-struct FuncParam
+struct Request
 {
     int idx;
     string filename;
@@ -73,8 +75,10 @@ public:
         string userDirectoryName = username;
         if (mkdir(("SERVER/" + userDirectoryName).c_str(), 0777) == 0)
         {
+            pthread_mutex_lock(&authLock);
             authFile << username << " " << password << "\n";
             usersMap[username] = {password, 1};
+            pthread_mutex_unlock(&authLock);
         }
         else
         {
@@ -160,7 +164,7 @@ void commandMapping(char *command, int idx)
     if (filename != NULL)
         flag = strtok(NULL, " ");
     int fd = clients[idx].fd, dataConnFd = clients[idx].latestDataConnection;
-    FuncParam *params = new FuncParam();
+    Request *params = new Request();
     params->idx = idx;
     params->filename = string(filename);
 
@@ -216,7 +220,7 @@ int getFileSizeC(FILE *fptr)
 
 void *recvFile(void *args)
 {
-    FuncParam *param = (FuncParam *)args;
+    Request *param = (Request *)args;
     int idx = param->idx, fileSize, numBytes = 0, totalBytesRecieved = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
     bool isBinary = param->isBinary;
@@ -250,15 +254,15 @@ void *recvFile(void *args)
 
 void *sendFile(void *args)
 {
-    int idx = ((FuncParam *)args)->idx, numBytes = 0, totalBytesSent = 0, cnt = 0;
+    int idx = ((Request *)args)->idx, numBytes = 0, totalBytesSent = 0, cnt = 0;
     int clientFd = clients[idx].latestDataConnection;
-    bool isBinary = ((FuncParam *)args)->isBinary;
-    cout << ((FuncParam *)args)->filename << endl;
+    bool isBinary = ((Request *)args)->isBinary;
+    cout << ((Request *)args)->filename << endl;
     FILE *fptr;
     if (isBinary)
-        fptr = fopen(("SERVER/" + clients[idx].username + "/" + ((FuncParam *)args)->filename).c_str(), "rb");
+        fptr = fopen(("SERVER/" + clients[idx].username + "/" + ((Request *)args)->filename).c_str(), "rb");
     else
-        fptr = fopen(("SERVER/" + clients[idx].username + "/" + ((FuncParam *)args)->filename).c_str(), "r");
+        fptr = fopen(("SERVER/" + clients[idx].username + "/" + ((Request *)args)->filename).c_str(), "r");
     int fileSize = getFileSizeC(fptr);
     write(clientFd, &fileSize, sizeof(int));
     char fileBuffer[BUFF_SIZE];
@@ -342,6 +346,7 @@ void *connector(void *args)
         }
     }
     close(senderFd);
+    pthread_mutex_lock(&mapLock);
     User::usersMap[clients[slot].username].second = 0;
     for (int i = 0; i < MAX_DATA_CHANNELS_PER_CLIENT; i++)
     {
@@ -353,6 +358,7 @@ void *connector(void *args)
     }
     dataConnMap.erase(clients[slot].ip);
     availableSlots[slot] = 1;
+    pthread_mutex_unlock(&mapLock);
     cout << "[ / ] Client_fd " << senderFd << " disconnected!" << endl;
     return nullptr;
 }
