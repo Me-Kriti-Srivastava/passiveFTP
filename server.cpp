@@ -92,7 +92,7 @@ public:
     {
         if (usersMap.find(username) != usersMap.end())
         {
-            if (password == usersMap[username].first && usersMap[username].second == 0)
+            if (password == usersMap[username].first)
             {
                 usersMap[username].second = 1;
                 return 1;
@@ -149,6 +149,28 @@ bool fileExists(char *filename, char *username)
     return exists;
 }
 
+void sendList(char *username, int fd)
+{
+    DIR *mydir;
+    char listBuffer[BUFF_SIZE];
+    bzero(listBuffer, BUFF_SIZE);
+    struct dirent *mydirent;
+    mydir = opendir((string("./SERVER/") + string(username)).c_str());
+    string list = "List of available files:\n";
+    while ((mydirent = readdir(mydir)) != NULL)
+    {
+        string dirname = string(mydirent->d_name);
+        if (dirname[0] == '.')
+            continue;
+        list = list + dirname + "\n";
+    }
+
+    strcat(listBuffer, list.c_str());
+    write(fd, listBuffer, BUFF_SIZE);
+    closedir(mydir);
+    return;
+}
+
 void commandMapping(char *command, int idx)
 {
     string cmd = string(command);
@@ -174,31 +196,54 @@ void commandMapping(char *command, int idx)
     else
         res += "CREATE_DATA_CONN";
     if (strcmp(op, "GET") == 0 && filename != NULL)
+    {
         res += " GET ";
+        res += charArrToString(filename, getStringSizeC(filename));
+    }
     else if (strcmp(op, "PUT") == 0 && filename != NULL)
+    {
         res += " PUT ";
-    res += charArrToString(filename, getStringSizeC(filename));
+        res += charArrToString(filename, getStringSizeC(filename));
+    }
+    else if (strcmp(op, "LIST") == 0)
+    {
+        res.erase();
+        res += "LIST LIST";
+    }
+
     if (flag != NULL && strcmp(flag, "-b") == 0)
         res += " -b";
 
-    bcopy("CREATE_DATA_CONN", statusBuffer, BUFF_SIZE);
-    write(fd, statusBuffer, BUFF_SIZE);
-    write(fd, res.c_str(), BUFF_SIZE);
-    bzero(statusBuffer, BUFF_SIZE);
-    read(fd, statusBuffer, BUFF_SIZE);
-    cout << "Status: " << statusBuffer << endl;
-
-    if (strcmp(statusBuffer, "DATA_CONN_TRUE") == 0)
+    if (strcmp(op, "LIST") == 0)
+        sendList((char *)clients[idx].username.c_str(), clients[idx].fd);
+    else
     {
-        if (strcmp(op, "GET") == 0 && op != NULL)
-            pthread_create(&thread_id, NULL, sendFile, (void *)params);
-        else if (strcmp(op, "PUT") == 0 && op != NULL)
-            pthread_create(&thread_id, NULL, recvFile, (void *)params);
+        bcopy("CREATE_DATA_CONN", statusBuffer, BUFF_SIZE);
+        write(fd, statusBuffer, BUFF_SIZE);
+        write(fd, res.c_str(), BUFF_SIZE);
+    }
+    bzero(statusBuffer, BUFF_SIZE);
+    if (strcmp(op, "LIST") == 0)
+    {
+        return;
     }
     else
     {
-        cout << "File not found!\nData channel closed!" << endl;
-        close(dataConnFd);
+        read(fd, statusBuffer, BUFF_SIZE);
+        cout << "Status: " << statusBuffer << endl;
+
+        if (strcmp(statusBuffer, "DATA_CONN_TRUE") == 0)
+        {
+            if (strcmp(op, "GET") == 0 && op != NULL)
+                pthread_create(&thread_id, NULL, sendFile, (void *)params);
+            else if (strcmp(op, "PUT") == 0 && op != NULL)
+                pthread_create(&thread_id, NULL, recvFile, (void *)params);
+        }
+        else
+        {
+            cout << "Data channel closed!" << endl;
+            close(dataConnFd);
+        }
     }
     return;
 }
@@ -314,6 +359,7 @@ void *listenDataConn(void *args)
 void *connector(void *args)
 {
     int slot = *((int *)args), senderFd = clients[slot].fd;
+    bool closed = 0;
     User user;
     char usernameBuffer[BUFF_SIZE], passwordBuffer[BUFF_SIZE], commandBuffer[BUFF_SIZE], statusBuffer[BUFF_SIZE];
     bzero(usernameBuffer, BUFF_SIZE);
@@ -345,21 +391,50 @@ void *connector(void *args)
             printf("%s\n", statusBuffer);
         }
     }
-    close(senderFd);
-    pthread_mutex_lock(&mapLock);
-    User::usersMap[clients[slot].username].second = 0;
-    for (int i = 0; i < MAX_DATA_CHANNELS_PER_CLIENT; i++)
+    else
     {
-        if (clientDataConns[slot][i] != -1)
+        // cout << "sdfdsfsdf dsfasfasf" << endl;
+        write(senderFd, "CLOSE", BUFF_SIZE);
+        bzero(statusBuffer, BUFF_SIZE);
+        read(senderFd, statusBuffer, BUFF_SIZE);
+        if (strcmp(statusBuffer, "CLOSE") == 0)
         {
-            close(clientDataConns[slot][i]);
-            clientDataConns[slot][i] = -1;
+            close(senderFd);
+            closed = 1;
+            pthread_mutex_lock(&mapLock);
+            User::usersMap[clients[slot].username].second = 0;
+            for (int i = 0; i < MAX_DATA_CHANNELS_PER_CLIENT; i++)
+            {
+                if (clientDataConns[slot][i] != -1)
+                {
+                    close(clientDataConns[slot][i]);
+                    clientDataConns[slot][i] = -1;
+                }
+            }
+            dataConnMap.erase(clients[slot].ip);
+            availableSlots[slot] = 1;
+            pthread_mutex_unlock(&mapLock);
+            cout << "[ / ] Client_fd " << senderFd << " disconnected!" << endl;
         }
     }
-    dataConnMap.erase(clients[slot].ip);
-    availableSlots[slot] = 1;
-    pthread_mutex_unlock(&mapLock);
-    cout << "[ / ] Client_fd " << senderFd << " disconnected!" << endl;
+    if (!closed)
+    {
+        close(senderFd);
+        pthread_mutex_lock(&mapLock);
+        User::usersMap[clients[slot].username].second = 0;
+        for (int i = 0; i < MAX_DATA_CHANNELS_PER_CLIENT; i++)
+        {
+            if (clientDataConns[slot][i] != -1)
+            {
+                close(clientDataConns[slot][i]);
+                clientDataConns[slot][i] = -1;
+            }
+        }
+        dataConnMap.erase(clients[slot].ip);
+        availableSlots[slot] = 1;
+        pthread_mutex_unlock(&mapLock);
+        cout << "[ / ] Client_fd " << senderFd << " disconnected!" << endl;
+    }
     return nullptr;
 }
 

@@ -22,6 +22,7 @@ using namespace std;
 
 pthread_t sender, reciever, tid;
 int PORT;
+char ip[INET_ADDRSTRLEN];
 
 void handleSig(int sig_num)
 {
@@ -227,7 +228,7 @@ void *reciever_func(void *args)
         signal(SIGINT, handleSig);
         bzero(buffer, BUFF_SIZE);
         read(fd, buffer, BUFF_SIZE);
-        // printf("MESSAGE: %s\n", buffer);
+        printf("MESSAGE: %s\n", buffer);
         if (strcmp(buffer, "CREATE_DATA_CONN") == 0)
         {
             char res[BUFF_SIZE];
@@ -249,13 +250,13 @@ void *reciever_func(void *args)
             memset(&serverAdd, '\0', sizeof(serverAdd));
             serverAdd.sin_family = AF_INET;
             serverAdd.sin_port = htons(PORT + 1);
-            serverAdd.sin_addr.s_addr = INADDR_ANY;
+            serverAdd.sin_addr.s_addr = inet_addr(ip);
 
             pthread_t thread_id;
 
             if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
             {
-
+                cout << "[ / ] Data Channel Established!" << endl;
                 char *status = NULL, *op = NULL, *file_addr = NULL, *flag = NULL;
                 status = strtok(res, " ");
                 if (status != NULL)
@@ -290,6 +291,11 @@ void *reciever_func(void *args)
                 exit(1);
             }
         }
+        else if (strcmp(buffer, "CLOSE") == 0)
+        {
+            write(fd, "CLOSE", BUFF_SIZE);
+            close(fd);
+        }
     }
 }
 
@@ -301,6 +307,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     PORT = atoi(argv[2]);
+    strcpy(ip, argv[1]);
     int sockfd;
     struct sockaddr_in serverAdd;
     signal(SIGINT, handleSig);
@@ -323,6 +330,7 @@ int main(int argc, char *argv[])
 
     if (connect(sockfd, (struct sockaddr *)&serverAdd, sizeof(serverAdd)) == 0)
     {
+        cout << "[ / ] Controol Channel Established!" << endl;
         pthread_create(&sender, NULL, sender_func, (void *)&sockfd);
         pthread_create(&reciever, NULL, reciever_func, (void *)&sockfd);
         // pthread_join(reciever, NULL);
