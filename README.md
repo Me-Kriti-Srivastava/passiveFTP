@@ -13,43 +13,59 @@ A naive authentication mechanism has also been implemented to make the clients p
 
 The server listens for control channel connection requests on `PORT` and for data channel connection requests on `PORT+1`. A control channel is established when a client connects to the server. Data channels are created on request (GET/PUT). _This mechanism enables multiple clients to perform multiple GET/PUT operations simultaneously_.
 
-Only one control channel exists between a client and the server but multiple data channels may exists. Data channels are closed automatically when the designated file transfer is completed.
+Only one control channel exists between a client and the server but multiple data channels may exist. Data channels are closed automatically when the designated file transfer is completed.
 
 ## Commands Supported
 
 1. **GET** : Downloads a file from the logged-in user's directory from the server and saves it in the `CLIENT` directory on the client.
 
-   `GET <filename> [-b (for binary mode)] $`
+   ```bash
+   GET <filename> [-b (for binary mode)] $
+   ```
 
 2. **LIST** : Description: List all files present in logged in clients's directory on the server.
 
-   `LIST $`
+   ```bash
+   LIST $
+   ```
 
 3. **PUT** : Uploads a file from the `CLIENT` directory from client to the logged-in user's directory on the server.
 
-   `PUT <filename> [-b (for binary mode)] $`
+   ```bash
+   PUT <filename> [-b (for binary mode)] $
+   ```
 
 4. **close** : Disconnect the client from server.
 
-   `close $`
+   ```bash
+   close $
+   ```
 
 ## Setup and Run
 
 1. Clone this repo
 
-   `git clone https://github.com/rahulpathak-github/passiveFTP`
+   ```bash
+   git clone https://github.com/rahulpathak-github/passiveFTP
+   ```
 
 2. Run the following command to build and move into the `build` directory
 
-   `cd passiveFTP && sh build.sh && cd build`
+   ```bash
+   cd passiveFTP && sh build.sh && cd build
+   ```
 
 3. Run the server
 
-   `./server <PORT>`
+   ```bash
+   ./server <PORT>
+   ```
 
 4. Run the client
 
-   `./client <IP> <PORT>`
+   ```bash
+   ./client <IP> <PORT>
+   ```
 
 Note: Current implemetation allows only one connection from one IP address.
 
